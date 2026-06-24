@@ -1,6 +1,6 @@
-# TakeMeter:  Planning.md
-**Project:** r/soccer Discourse Classifier
-**Community:** r/soccer (Reddit)
+# TakeMeter: Planning Document
+**Project:** r/soccer Discourse Classifier  
+**Community:** r/soccer (Reddit)  
 **Model Target:** Fine-tuned DistilBERT for 4-class post classification
 
 ---
@@ -125,7 +125,19 @@ This is `news` because it reports a verifiable record with specific years cited 
 - For `hot_take`: Search for threads about controversial managers (Tuchel, Mourinho-era debates) or GOAT debates
 - Do not pad underrepresented labels with borderline examples just to hit the number — quality of annotation matters more than exact balance
 
-**Collection method:** Manual copy-paste into a CSV with columns: `text`, `label`, `notes`. The `notes` column will flag any example that required non-obvious label judgment. For `news` labels, post titles are sufficient. For the other three labels, full comment text will be collected (not just the title of the parent post).
+**Collection method:** Manual copy-paste into a CSV with columns: `text`, `label`, `notes`. The `notes` column will flag any example that required non-obvious label judgment. For `news` labels, post titles are sufficient. For the other three labels, full comment text was collected (not just the title of the parent post).
+
+**Actual final distribution collected:**
+
+| Label | Count | Percentage |
+|---|---|---|
+| `news` | 75 | 35.4% |
+| `reaction` | 60 | 28.3% |
+| `hot_take` | 42 | 19.8% |
+| `analysis` | 35 | 16.5% |
+| **Total** | **212** | **100%** |
+
+`analysis` and `hot_take` were harder to collect than expected — they live primarily in comment sections rather than post titles, requiring more manual effort. `news` was overcollected because post titles are fast to gather. No single label exceeded 70%.
 
 ---
 
@@ -139,8 +151,9 @@ This is `news` because it reports a verifiable record with specific years cited 
 **Why accuracy alone is not enough:**
 With four balanced classes (25% each), a model that always predicts `news` would achieve 25% accuracy. Even with slight imbalance, a model could reach 40-50% accuracy by over-predicting the majority class. Per-class F1 and the confusion matrix reveal whether the model has actually learned all four distinctions or is just exploiting distributional shortcuts.
 
-**Secondary metric:**
-- **Confidence calibration** (stretch feature): Whether the model's probability scores are meaningful — does a 90% confident prediction get it right more often than a 60% one?
+**Secondary metrics (stretch features):**
+- **Confidence calibration:** Whether the model's probability scores are meaningful — does a 90% confident prediction get it right more often than a 60% one?
+- **Error pattern analysis:** Whether wrong predictions share a systematic pattern rather than being random noise.
 
 ---
 
@@ -158,19 +171,22 @@ With four balanced classes (25% each), a model that always predicts `news` would
 
 **Rationale:** These thresholds are set conservatively because the task involves subjective judgment — a human annotator would not achieve 100% agreement on these labels. A classifier at 78%+ accuracy with balanced per-class performance would be genuinely useful for things like filtering low-effort posts, surfacing analytical content, or flagging reaction posts in non-match-thread contexts.
 
+**Actual results vs. thresholds:**
+- Overall accuracy: 90.6% ✅ (exceeded both thresholds)
+- All per-class F1 ≥ 0.65: ✅ (lowest was `reaction` at 0.84)
+- Fine-tuning improvement over baseline: +9.4% (just under the 10pt target; baseline was unusually strong at 81.2%)
+
 ---
 
 ## 7. AI Tool Plan
 
 ### Label stress-testing
-I will give Claude my four label definitions and the three edge case descriptions above, and ask it to generate 8–10 posts that sit at the boundary between two specific label pairs: `hot_take` vs `analysis`, and `news` vs `reaction`. If Claude produces posts I cannot classify cleanly using my decision rules, I will tighten the definitions before annotating any examples. This step happens before data collection begins.
+I gave Claude my four label definitions and the three edge case descriptions above, and asked it to generate 8–10 posts that sit at the boundary between two specific label pairs: `hot_take` vs `analysis`, and `news` vs `reaction`. Several generated examples revealed that my initial definition of `news` was too broad — celebratory stat posts with excited language were genuinely ambiguous. I added the decision rule "if the primary content is a verifiable fact, label it news regardless of emotional framing" as a result. This was done before any annotation began.
 
 ### Annotation assistance
-I will use Claude to pre-label batches of 20–30 examples at a time by providing my label definitions and a set of raw posts and asking it to assign one label per post with a one-sentence justification. I will review and correct every pre-assigned label — skimming without genuine review defeats the purpose. All pre-labeled examples will be marked with `ai_prelabeled = true` in the notes column of the CSV for disclosure in the final AI usage section.
+I used Claude to pre-label batches of 20–30 examples at a time by providing my label definitions and a set of raw posts and asking it to assign one label per post with a one-sentence justification. Claude pre-labeled approximately 120 of the 212 examples. I reviewed and corrected every pre-assigned label — roughly 15–20% required correction, mostly on the `hot_take`/`reaction` boundary for quote posts. All pre-labeled examples are flagged in the `notes` column of the CSV.
 
 ### Failure analysis
-After fine-tuning, I will paste all misclassified examples from the test set into Claude and ask it to identify common patterns — post length, specific label pairs being confused, use of sarcasm, quote format posts, or any other systematic issue. I will then verify each pattern by re-reading the examples myself before including findings in the evaluation report. The goal is to identify whether errors are random or systematic, and whether they trace back to annotation inconsistency, label boundary ambiguity, or model limitations.
+After fine-tuning, I pasted all 3 misclassified examples from the test set into Claude and asked it to identify common patterns. Claude identified that all three errors involved the `reaction` label and that emotional language was the likely confounding feature. I verified this pattern by re-reading the errors myself and confirmed it was accurate. The full pattern analysis is documented in the README evaluation report.
 
 ---
-
-*This document will be updated before beginning any stretch features.*
