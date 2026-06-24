@@ -166,17 +166,17 @@ The model made 3 errors total. All errors involve the `reaction` label — eithe
 **Error #1**
 - **Text:** "Thierry Henry in his post-match analysis about Ronaldo after Portugal's game vs DR Congo: The team needs to score, not you need to score"
 - **True label:** `hot_take` | **Predicted:** `reaction` (confidence: 0.53)
-- **Analysis:** This is a quote post with emotional, in-the-moment delivery ("The team needs to score, not you!"). The model correctly detected the emotional register but failed to recognize that the content is a bold opinion assertion rather than an immediate feeling. The root cause is annotation boundary ambiguity: quote posts from pundits look like reactions on the surface but should be classified by their content. With only a few such examples in the training set, the model learned to weight the emotional framing over the content type.
+- **Analysis:** This is a quote post with emotional, in-the-moment delivery. The model correctly detected the emotional register but failed to recognize that the content is a bold opinion assertion rather than an immediate feeling. The root cause is annotation boundary ambiguity: quote posts from pundits look like reactions on the surface but should be classified by their content. With only a few such examples in the training set, the model learned to weight the emotional framing over the content type.
 
 **Error #2**
 - **Text:** "German legend Franz Beckenbauer has passed away today aged 78. RIP Franz. — Fabrizio Romano"
 - **True label:** `news` | **Predicted:** `reaction` (confidence: 0.41)
-- **Analysis:** The "RIP Franz" tribute language is emotionally charged, which pulled the model toward `reaction`. The low confidence (0.41) shows the model was genuinely uncertain. This is a distributional problem: death announcements are rare in the training set and the emotional language pattern ("RIP") appears more often in reaction examples. The fix would be more death/retirement announcement examples in training to teach the model that emotional language in a factual report doesn't make it a reaction.
+- **Analysis:** The "RIP Franz" tribute language is emotionally charged, which pulled the model toward `reaction`. The low confidence (0.41) shows the model was genuinely uncertain. This is a distributional problem: death announcements are rare in the training set and the emotional language pattern appears more often in reaction examples. More death/retirement announcement examples in training would teach the model that emotional language in a factual report doesn't make it a reaction.
 
 **Error #3**
 - **Text:** "Kansas City honors Lionel Messi after World Cup hat trick"
 - **True label:** `reaction` | **Predicted:** `news` (confidence: 0.53)
-- **Analysis:** This post reads like a news headline — it describes a factual event (a city honoring a player) with neutral language. The model correctly detected the headline format and predicted `news`. However, the annotation treats this as a `reaction` because it documents a celebratory community moment rather than reporting a verifiable fact. This reveals an annotation consistency issue: short posts documenting celebratory events sit on the `news`/`reaction` boundary, and my decision rule ("if the primary content is a verifiable fact, it's news") was not applied consistently here. This is the most defensible wrong prediction — a second annotator might label this `news`.
+- **Analysis:** This post reads like a news headline — it describes a factual event with neutral language. The model correctly detected the headline format and predicted `news`. However, the annotation treats this as `reaction` because it documents a celebratory community moment. This reveals an annotation consistency issue: the decision rule ("if the primary content is a verifiable fact, it's news") was not applied consistently here. This is the most defensible wrong prediction — a second annotator might label this `news`.
 
 ### Sample Classifications
 
@@ -192,13 +192,59 @@ The model made 3 errors total. All errors involve the `reaction` label — eithe
 
 ## Reflection: What the Model Captured vs. What Was Intended
 
-The fine-tuned model learned the `news` and `analysis` boundaries extremely well — both achieved perfect or near-perfect F1. The more interesting finding is where it struggled: the `reaction`/`hot_take` boundary, specifically for **quote posts from pundits and managers**.
+The fine-tuned model learned the `news` and `analysis` boundaries extremely well — both achieved perfect or near-perfect F1. The more interesting finding is where it struggled: the `reaction`/`hot_take` boundary, specifically for quote posts from pundits and managers.
 
 What the model appears to have learned is a **surface-level emotional register detector**: posts with excited or emotional language get classified as `reaction`, posts with calm declarative language get classified as `news` or `hot_take`. This works most of the time because reactions genuinely tend to be emotional and news genuinely tends to be neutral. But it fails on quote posts, where a pundit's emotional delivery of a bold opinion gets misclassified as `reaction`.
 
-The intended distinction was based on *content structure* (assertion without evidence = hot_take, feeling expressed = reaction), but the model learned a *tone* shortcut instead. This is a classic case of a model learning a spurious correlation that works on most training examples but breaks on the hard cases.
+The intended distinction was based on content structure (assertion without evidence = hot_take, feeling expressed = reaction), but the model learned a tone shortcut instead. This is a classic case of a model learning a spurious correlation that works on most training examples but breaks on the hard cases.
 
-To fix this, I would need more quote-post examples explicitly labeled `hot_take` in training — enough that the model learns that emotional tone does not automatically mean `reaction` when the speaker is making a bold claim.
+To fix this, more quote-post examples explicitly labeled `hot_take` in training would force the model to learn that emotional tone does not automatically mean `reaction` when the speaker is making a bold claim.
+
+---
+
+## Error Pattern Analysis
+
+Across all 3 wrong predictions, a single systematic pattern emerges: **the model uses emotional tone as a proxy for the `reaction` label, and headline format as a proxy for the `news` label, rather than reasoning about content structure.**
+
+Every error involves the `reaction` boundary in one direction or the other:
+
+| Error | True label | Predicted | Confounding feature |
+|---|---|---|---|
+| Thierry Henry pundit quote | `hot_take` | `reaction` | Emotional delivery of a bold opinion |
+| Beckenbauer death announcement | `news` | `reaction` | "RIP Franz" tribute language |
+| "Kansas City honors Messi" | `reaction` | `news` | Neutral headline format |
+
+**The pattern:** When emotional language is present in a post that is actually `news` or `hot_take`, the model pulls toward `reaction`. When neutral headline language is present in a post that is actually `reaction`, the model pulls toward `news`. The model has learned surface tone rather than content structure.
+
+**Why this specific pattern emerged:** The training data has a real correlation between tone and label — most `reaction` examples genuinely are emotionally written, and most `news` examples genuinely use neutral language. With only 35–60 training examples per class, the model learned this shortcut because it works 90%+ of the time. The shortcut only breaks on three post types: pundit quote posts (emotional tone + opinion content), death/retirement announcements (emotional language + factual content), and celebratory event descriptions (factual language + community feeling).
+
+**What would fix it:** Adding 10–15 training examples of each failure type — pundit quotes labeled `hot_take`, death announcements labeled `news`, and celebratory events labeled `reaction` — would force the model to learn that tone and label are not perfectly correlated. Alternatively, a tighter decision rule in annotation would reduce inconsistency at the source.
+
+**Confidence as a signal:** All 3 errors had confidence below 0.55, consistent with the calibration analysis showing the model is uncertain precisely when its tone shortcut doesn't cleanly apply. In deployment, flagging predictions below 60% confidence for human review would catch all 3 errors while auto-labeling the confident 90%+ cases correctly.
+
+---
+
+## Confidence Calibration
+
+| Confidence Range | Predictions | Correct | Accuracy |
+|---|---|---|---|
+| 50%–70% | 13 | 11 | 84.6% |
+| 70%–85% | 8 | 8 | 100.0% |
+| 85%–100% | 0 | — | — |
+
+**Mean confidence:** 58.6% | **Overall accuracy:** 90.6% | **Calibration gap:** -32.1%
+
+The model is systematically **underconfident** — it achieves 90.6% accuracy but assigns an average confidence of only 58.6%. No prediction exceeded 85% confidence, even for easy cases. This is a known behavior of fine-tuned BERT-family models on small datasets: the softmax outputs remain spread across classes because the model hasn't seen enough examples to become sharply decisive.
+
+However, confidence is **directionally meaningful**: predictions in the 70–85% range were correct 100% of the time, while predictions in the 50–70% range were correct 84.6% of the time. Higher confidence does correspond to higher accuracy, which means the scores carry real signal even if the absolute values are poorly calibrated. In a deployed tool, a confidence threshold of ~70% could be used to flag uncertain predictions for human review while auto-labeling confident ones.
+
+---
+
+## Deployed Interface
+
+A working classifier interface is available in `classifier_interface.html` in this repo. It accepts a new r/soccer post as input and displays the predicted label, confidence score, per-label score breakdown, and a one-sentence explanation.
+
+**To run it:** Download `classifier_interface.html`, open it in any browser (Chrome, Firefox, Safari), enter your Anthropic API key in the field at the top, paste any r/soccer post, and click "Classify post." The API key is never stored or sent anywhere except directly to Anthropic's API.
 
 ---
 
@@ -214,6 +260,7 @@ To fix this, I would need more quote-post examples explicitly labeled `hot_take`
 
 **Instance 1: Pre-labeling annotation batches.** I provided Claude with my four label definitions and batches of 20–30 unlabeled posts and asked it to assign one label per post with a one-sentence justification. Claude pre-labeled approximately 120 of the 212 examples. I reviewed and corrected every pre-assigned label — roughly 15–20% required correction, mostly on the `hot_take`/`reaction` boundary for quote posts. All pre-labeled examples are flagged in the `notes` column of the CSV.
 
-**Instance 2: Failure pattern analysis.** After fine-tuning, I pasted the 3 wrong predictions into Claude and asked it to identify common themes. Claude identified that all three errors involved the `reaction` label and that emotional language was the likely confounding feature — posts with emotional tone were being pulled toward `reaction` regardless of their content structure. I verified this pattern by re-reading the errors myself and confirmed it was accurate. This pattern is documented in the error analysis section above.
+**Instance 2: Failure pattern analysis.** After fine-tuning, I pasted the 3 wrong predictions into Claude and asked it to identify common themes. Claude identified that all three errors involved the `reaction` label and that emotional language was the likely confounding feature — posts with emotional tone were being pulled toward `reaction` regardless of their content structure. I verified this pattern by re-reading the errors myself and confirmed it was accurate. This pattern is documented in the error pattern analysis section above.
 
 **Instance 3: Label stress-testing.** Before annotating any examples, I gave Claude my four label definitions and asked it to generate 8–10 boundary posts that sat between two specific label pairs (`hot_take` vs `analysis`, and `news` vs `reaction`). Several of the generated examples revealed that my initial definition of `news` was too broad — celebratory stat posts with excited language were genuinely ambiguous. I added the decision rule "if the primary content is a verifiable fact, label it news regardless of emotional framing" as a result.
+
