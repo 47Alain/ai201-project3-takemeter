@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TakeMeter — r/soccer Post Classifier</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f9f9f7; color: #1a1a1a; padding: 2rem; min-height: 100vh; }
+  .container { max-width: 680px; margin: 0 auto; }
+  h1 { font-size: 22px; font-weight: 600; margin-bottom: 4px; }
+  .subtitle { font-size: 14px; color: #666; margin-bottom: 1.5rem; }
+  .api-section { background: #fff; border: 1px solid #e5e5e0; border-radius: 10px; padding: 1rem 1.25rem; margin-bottom: 1.25rem; }
+  .api-section label { font-size: 13px; font-weight: 500; display: block; margin-bottom: 6px; }
+  .api-section input { width: 100%; padding: 8px 10px; font-size: 13px; border: 1px solid #ddd; border-radius: 6px; font-family: monospace; }
+  .api-hint { font-size: 12px; color: #888; margin-top: 5px; }
+  .api-hint a { color: #2563eb; }
+  textarea { width: 100%; min-height: 110px; font-size: 14px; font-family: inherit; padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px; resize: vertical; background: #fff; }
+  .examples-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #999; margin: 1rem 0 8px; }
+  .examples { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 1rem; }
+  .example-btn { font-size: 12px; padding: 5px 12px; border-radius: 6px; cursor: pointer; background: #fff; border: 1px solid #ddd; color: #555; }
+  .example-btn:hover { background: #f3f3f0; color: #111; }
+  .classify-btn { padding: 9px 22px; font-size: 14px; font-weight: 600; cursor: pointer; border-radius: 8px; background: #1a1a1a; color: #fff; border: none; }
+  .classify-btn:hover { background: #333; }
+  .classify-btn:disabled { background: #999; cursor: not-allowed; }
+  .result-card { background: #fff; border: 1px solid #e5e5e0; border-radius: 10px; padding: 1.25rem; margin-top: 1.25rem; }
+  .result-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #999; margin-bottom: 10px; }
+  .label-row { display: flex; align-items: center; gap: 12px; margin-bottom: 1rem; }
+  .label-badge { font-size: 13px; font-weight: 600; padding: 5px 14px; border-radius: 6px; }
+  .label-analysis { background: #dbeafe; color: #1e40af; }
+  .label-hot_take { background: #fee2d5; color: #9a3412; }
+  .label-reaction { background: #fef3c7; color: #92400e; }
+  .label-news { background: #dcfce7; color: #166534; }
+  .conf-bar { flex: 1; height: 6px; background: #eee; border-radius: 3px; overflow: hidden; }
+  .conf-fill { height: 100%; border-radius: 3px; }
+  .fill-analysis { background: #3b82f6; }
+  .fill-hot_take { background: #ef4444; }
+  .fill-reaction { background: #f59e0b; }
+  .fill-news { background: #22c55e; }
+  .conf-text { font-size: 14px; font-weight: 600; min-width: 42px; text-align: right; }
+  .divider { border: none; border-top: 1px solid #f0f0ec; margin: 1rem 0; }
+  .scores-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #999; margin-bottom: 10px; }
+  .score-row { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
+  .score-lbl { font-size: 12px; color: #666; width: 72px; }
+  .score-bar { flex: 1; height: 4px; background: #eee; border-radius: 2px; overflow: hidden; }
+  .score-pct { font-size: 12px; color: #666; width: 36px; text-align: right; }
+  .explanation { font-size: 13px; color: #555; margin-top: 1rem; line-height: 1.6; border-top: 1px solid #f0f0ec; padding-top: 1rem; }
+  .loading { font-size: 14px; color: #666; margin-top: 1rem; display: none; align-items: center; gap: 6px; }
+  .error { font-size: 13px; color: #dc2626; margin-top: 1rem; display: none; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>TakeMeter — r/soccer post classifier</h1>
+  <p class="subtitle">Classifies posts into: <strong>analysis</strong>, <strong>hot_take</strong>, <strong>reaction</strong>, or <strong>news</strong></p>
+
+  <div class="api-section">
+    <label for="api-key">Anthropic API Key</label>
+    <input type="password" id="api-key" placeholder="sk-ant-..." />
+    <p class="api-hint">Get a free key at <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a> — never shared or stored.</p>
+  </div>
+
+  <textarea id="post-input" placeholder="Paste an r/soccer post or comment here..."></textarea>
+
+  <p class="examples-label">Try an example</p>
+  <div class="examples">
+    <button class="example-btn" onclick="setExample('analysis')">analysis</button>
+    <button class="example-btn" onclick="setExample('hot_take')">hot_take</button>
+    <button class="example-btn" onclick="setExample('reaction')">reaction</button>
+    <button class="example-btn" onclick="setExample('news')">news</button>
+  </div>
+
+  <button class="classify-btn" id="classify-btn" onclick="classify()">Classify post</button>
+
+  <div id="loading" class="loading">
+    <span>Classifying</span><span id="dots">...</span>
+  </div>
+  <div id="error" class="error"></div>
+  <div id="result"></div>
+</div>
+
+<script>
+const EXAMPLES = {
+  analysis: "Portugal's 3-4-2-1 was defensively solid but their wing-backs were unsure whether to press or track, giving Nuno Mendes and Cancelo immense freedom on the flanks. Congo completed 19 total tackles to Portugal's 11, made 28 clearances to Portugal's 10. Their defensive shape made it incredibly difficult for Portugal to find space in the final third.",
+  hot_take: "Tuchel has no idea what he's doing. England look exactly the same as under Southgate — boring and clueless. He needs to be sacked after the group stage before this gets any worse.",
+  reaction: "Cristiano Ronaldo shouts at camera IM BACK after post game. What a moment. Unbelievable scenes in Houston.",
+  news: "[Fabrizio Romano] BREAKING: Marco Palestra to Chelsea, here we go! Verbal agreement in place between all parties. Atalanta to receive package over 55m fee plus sell-on clause, long term deal to Italian talented RWB."
+};
+
+const LABEL_COLORS = {
+  analysis: { badge: 'label-analysis', fill: 'fill-analysis' },
+  hot_take: { badge: 'label-hot_take', fill: 'fill-hot_take' },
+  reaction: { badge: 'label-reaction', fill: 'fill-reaction' },
+  news: { badge: 'label-news', fill: 'fill-news' }
+};
+
+const SYSTEM_PROMPT = `You are classifying posts from r/soccer, a large football discussion community on Reddit.
+
+Assign each post to exactly one of the following categories:
+
+analysis: The post constructs a structured argument using specific, verifiable evidence — statistics, historical comparisons, tactical breakdowns, or scenario modeling — where the claim would hold up independently of emotional framing.
+
+hot_take: A post that states a bold opinion or prediction confidently, with little or no supporting evidence — any evidence cited is decorative rather than load-bearing, and the post asserts rather than reasons.
+
+reaction: A post expressing an immediate emotional response to a specific event — a goal, result, transfer, or controversy — with little to no argument, where the post's value is the feeling expressed.
+
+news: A post that reports a verifiable, factual event or development — transfer confirmations, match results, official records, or statistical milestones — presented without added opinion or emotional framing.
+
+Return ONLY valid JSON in this exact format, no other text:
+{"label": "analysis|hot_take|reaction|news", "confidence": 0.0, "scores": {"analysis": 0.0, "hot_take": 0.0, "reaction": 0.0, "news": 0.0}, "explanation": "one sentence why"}
+
+The four scores must sum to 1.0.`;
+
+function setExample(type) {
+  document.getElementById('post-input').value = EXAMPLES[type];
+  document.getElementById('result').innerHTML = '';
+  document.getElementById('error').style.display = 'none';
+}
+
+let dotInterval;
+function startDots() {
+  let n = 0;
+  dotInterval = setInterval(() => {
+    n = (n + 1) % 4;
+    document.getElementById('dots').textContent = '.'.repeat(n + 1);
+  }, 400);
+}
+function stopDots() { clearInterval(dotInterval); }
+
+async function classify() {
+  const text = document.getElementById('post-input').value.trim();
+  const apiKey = document.getElementById('api-key').value.trim();
+  if (!text) { alert('Please enter a post to classify.'); return; }
+  if (!apiKey) { alert('Please enter your Anthropic API key.'); return; }
+
+  const btn = document.getElementById('classify-btn');
+  btn.disabled = true;
+  const loading = document.getElementById('loading');
+  loading.style.display = 'flex';
+  document.getElementById('result').innerHTML = '';
+  document.getElementById('error').style.display = 'none';
+  startDots();
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-calls': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 300,
+        messages: [{ role: 'user', content: SYSTEM_PROMPT + '\n\nClassify this post:\n\n' + text }]
+      })
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error?.message || 'API error ' + res.status);
+    }
+
+    const data = await res.json();
+    const raw = data.content[0].text.trim();
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('Could not parse model response.');
+    const result = JSON.parse(jsonMatch[0]);
+
+    const label = result.label;
+    const conf = Math.round(result.confidence * 100);
+    const colors = LABEL_COLORS[label] || LABEL_COLORS.news;
+    const scores = result.scores || {};
+
+    const scoreRows = Object.entries(scores)
+      .sort((a, b) => b[1] - a[1])
+      .map(([l, s]) => {
+        const c = LABEL_COLORS[l] || LABEL_COLORS.news;
+        return `<div class="score-row">
+          <span class="score-lbl">${l.replace('_', ' ')}</span>
+          <div class="score-bar"><div class="score-fill ${c.fill}" style="width:${Math.round(s*100)}%; height:100%; border-radius:2px;"></div></div>
+          <span class="score-pct">${Math.round(s*100)}%</span>
+        </div>`;
+      }).join('');
+
+    document.getElementById('result').innerHTML = `
+      <div class="result-card">
+        <p class="result-label">Result</p>
+        <div class="label-row">
+          <span class="label-badge ${colors.badge}">${label.replace('_', ' ')}</span>
+          <div class="conf-bar"><div class="conf-fill ${colors.fill}" style="width:${conf}%"></div></div>
+          <span class="conf-text">${conf}%</span>
+        </div>
+        <hr class="divider">
+        <p class="scores-label">All label scores</p>
+        ${scoreRows}
+        <div class="explanation">${result.explanation}</div>
+      </div>`;
+  } catch(e) {
+    const errEl = document.getElementById('error');
+    errEl.textContent = 'Error: ' + e.message;
+    errEl.style.display = 'block';
+  }
+
+  stopDots();
+  loading.style.display = 'none';
+  btn.disabled = false;
+}
+</script>
+</body>
+</html>
